@@ -14,7 +14,7 @@ use log::Level;
 use manifest::{PaxManifest, Token};
 use pax_runtime_api::CommonProperties;
 use serde::de::value;
-use syn::{File, ItemMod, ItemStruct};
+use syn::{File, ItemMod, ItemStruct, ItemUse, PathSegment};
 use syn::visit::Visit;
 use std::borrow::Borrow;
 use std::cmp::Ordering;
@@ -1246,6 +1246,10 @@ impl<'ast> Visit<'ast> for StructVisitor {
     fn visit_item_struct(&mut self, i: &'ast ItemStruct) {
         println!("Found struct: {}", i.ident);
     }
+    fn visit_use_name(&mut self, i: &'ast syn::UseName) {
+        println!("Found use name: {}", i.ident);
+    
+    }
 }
 
 fn parse_structs(code: &str) {
@@ -1278,6 +1282,7 @@ pub fn perform_build(ctx: &RunContext) -> eyre::Result<(), Report> {
     let pax_lib_dir = ctx.path.clone() + "/src/lib.rs";
     let read_lib = fs::read_to_string(pax_lib_dir).unwrap();
     let file = syn::parse_file(&read_lib).unwrap();
+    parse_structs(&read_lib);
     handle_pax_src_lib(file);
     let rect_dir = env::current_dir().unwrap().parent().unwrap().join("./pax-std/src/lib.rs");
     println!("rect_dir is {:#?}",rect_dir);
