@@ -14,10 +14,11 @@ use log::Level;
 use manifest::{PaxManifest, Token};
 use pax_runtime_api::CommonProperties;
 use serde::de::value;
+use syn::File;
 use std::borrow::Borrow;
 use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
-use std::fs;
+use std::{fs, env};
 use std::io::{BufReader, Cursor, Write};
 use std::str::FromStr;
 use std::sync::{Arc, Mutex};
@@ -1209,6 +1210,29 @@ fn get_version_of_whitelisted_packages(path: &str) -> Result<String, &'static st
     tracked_version.ok_or("Cannot build a Pax project without a `pax-*` dependency somewhere in your project's dependency graph.  Add e.g. `pax-lang` to your Cargo.toml to resolve this error.")
 }
 
+fn handle_pax_src_lib(file: File) -> HashSet<String>{
+    let mut import_map:HashSet<String> = HashSet::new();
+    for item in file.items {
+        if let syn::Item::Use(item_use) = item {
+            if let syn::UseTree::Path(path) = item_use.tree {
+                if path.ident == "pax_std" {
+                    if let syn::UseTree::Path(p) = *path.tree {
+                        if let syn::UseTree::Group(g) = *p.tree {
+                            for item in &g.items {
+                                if let syn::UseTree::Name(name) = item {
+                                    println!("name is {}",name.ident.to_string());
+                                    import_map.insert(name.ident.to_string());
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    import_map
+}
+
 /// For the specified file path or current working directory, first compile Pax project,
 /// then run it with a patched build of the `chassis` appropriate for the specified platform
 /// See: pax-compiler-sequence-diagram.png
@@ -1217,7 +1241,12 @@ pub fn perform_build(ctx: &RunContext) -> eyre::Result<(), Report> {
     //the parser binary specifical for libdev in pax-example — see pax-example/Cargo.toml where
     //dependency paths are `.pax/pkg/*`.
     let pax_dir = get_or_create_pax_directory(&ctx.path);
-
+    let pax_lib_dir = ctx.path.clone() + "/src/lib.rs";
+    let read_lib = fs::read_to_string(pax_lib_dir).unwrap();
+    let file = syn::parse_file(&read_lib).unwrap();
+    handle_pax_src_lib(file);
+    println!("current dir {:#?}",env::current_dir().unwrap().parent().unwrap());
+        println!("{}",module_path!());
     //Inspect Cargo.lock to find declared pax lib versions.  Note that this is moot for
     //libdev, where we don't care about a crates.io version (and where `cargo metadata` won't work
     //on a cold-start monorepo clone.)
@@ -1251,6 +1280,9 @@ pub fn perform_build(ctx: &RunContext) -> eyre::Result<(), Report> {
     let out = String::from_utf8(output.stdout).unwrap();
     let mut manifest: PaxManifest =
         serde_json::from_str(&out).expect(&format!("Malformed JSON from parser: {}", &out));
+    for path in manifest.import_paths.iter(){
+        println!("path is {:#?}",path);
+    }
     let host_cargo_toml_path = Path::new(&ctx.path).join("Cargo.toml");
     let host_crate_info = get_host_crate_info(&host_cargo_toml_path);
     update_property_prefixes_in_place(&mut manifest, &host_crate_info);
