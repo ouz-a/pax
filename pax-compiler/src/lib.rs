@@ -14,7 +14,8 @@ use log::Level;
 use manifest::{PaxManifest, Token};
 use pax_runtime_api::CommonProperties;
 use serde::de::value;
-use syn::File;
+use syn::{File, ItemMod, ItemStruct};
+use syn::visit::Visit;
 use std::borrow::Borrow;
 use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
@@ -1233,6 +1234,39 @@ fn handle_pax_src_lib(file: File) -> HashSet<String>{
     import_map
 }
 
+struct StructVisitor;
+
+impl<'ast> Visit<'ast> for StructVisitor {
+    fn visit_item_mod(&mut self, i: &'ast ItemMod) {
+        for item in i.content.as_ref().map_or(&[][..], |(_, items)| &items) {
+            self.visit_item(item);
+        }
+    }
+
+    fn visit_item_struct(&mut self, i: &'ast ItemStruct) {
+        println!("Found struct: {}", i.ident);
+    }
+}
+
+fn parse_structs(code: &str) {
+    let syntax_tree = syn::parse_file(code).expect("Unable to parse code");
+    let mut visitor = StructVisitor;
+    for item in syntax_tree.items {
+        visitor.visit_item(&item);
+    }
+}
+fn parse_primitive_dir(file: File){
+    for item in file.items {
+        if let syn::Item::Mod(modded) = item{
+            modded.content.iter().for_each(|thing| {
+                for item in thing.1.iter(){
+                    
+                }
+            })
+        }
+    }
+}
+
 /// For the specified file path or current working directory, first compile Pax project,
 /// then run it with a patched build of the `chassis` appropriate for the specified platform
 /// See: pax-compiler-sequence-diagram.png
@@ -1245,8 +1279,11 @@ pub fn perform_build(ctx: &RunContext) -> eyre::Result<(), Report> {
     let read_lib = fs::read_to_string(pax_lib_dir).unwrap();
     let file = syn::parse_file(&read_lib).unwrap();
     handle_pax_src_lib(file);
-    println!("current dir {:#?}",env::current_dir().unwrap().parent().unwrap());
-        println!("{}",module_path!());
+    let rect_dir = env::current_dir().unwrap().parent().unwrap().join("./pax-std/src/lib.rs");
+    println!("rect_dir is {:#?}",rect_dir);
+    let to_str = fs::read_to_string(rect_dir).unwrap();
+    parse_structs(&to_str);
+    let parsed_rect_dir = syn::parse_file(&to_str).unwrap();
     //Inspect Cargo.lock to find declared pax lib versions.  Note that this is moot for
     //libdev, where we don't care about a crates.io version (and where `cargo metadata` won't work
     //on a cold-start monorepo clone.)
